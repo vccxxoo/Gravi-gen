@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gravity / Crane Energy Calculator — With Containers</title>
+  <style>
+    :root{--bg:#0f1724;--accent:#48b1bf;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#071021,#071b2a);color:#e6eef6}
+    .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    .card{width:820px;max-width:96%;background:rgba(255,255,255,0.02);backdrop-filter:blur(6px);border-radius:12px;padding:22px;border:1px solid rgba(255,255,255,0.03)}
+    h1{margin:0;font-size:20px;cursor:pointer;transition:color 0.3s ease}
+    h1:hover{color:var(--accent)}
+    .lead{color:#9fb3bd;margin-top:6px}
+    .form{display:flex;gap:12px;margin-top:18px;flex-wrap:wrap}
+    label{display:block;font-size:13px;color:#bcd7db;margin-bottom:6px}
+    input[type=number],select{padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:#071828;color:inherit;font-size:15px;width:100%}
+    .big{font-size:18px;padding:10px}
+    .row{display:flex;gap:10px}
+    .output{margin-top:18px;background:linear-gradient(90deg, rgba(255,255,255,0.01), transparent);padding:14px;border-radius:10px}
+    .stat{display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:8px;margin-bottom:8px}
+    .muted{font-size:13px;color:#9fb3bd}
+    .btn{margin-top:6px;padding:10px 14px;border-radius:10px;background:linear-gradient(90deg,var(--accent),#2f7f8b);border:none;color:#04141a;font-weight:700;cursor:pointer}
+    .note{font-size:13px;color:#89aeb4;margin-top:12px}
+    @media (max-width:700px){.form{flex-direction:column}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" role="region" aria-label="Gravity Calculator">
+      <h1 id="secretToggle">Gravity / Crane Energy Calculator — With Containers</h1>
+      <p class="lead">Enter Weight, Height, And (Optionally) Number Of Containers. All Other Assumptions Use Safe Defaults. Runs Locally.</p>
+
+      <div class="form" aria-label="Inputs">
+        <div style="flex:1">
+          <label for="weight">Weight Of Container</label>
+          <div class="row">
+            <input id="weight" type="number" min="0" step="0.01" placeholder="Enter Weight" class="big" value="10">
+            <select id="wunit">
+              <option value="kg">Kg</option>
+              <option value="tonne">Tonne</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="width:200px">
+          <label for="height">Lift Height (Meters)</label>
+          <input id="height" type="number" min="0" step="0.01" placeholder="Meters" class="big" value="5">
+        </div>
+
+        <div style="width:220px">
+          <label for="containers">Number Of Containers (Optional)</label>
+          <input id="containers" type="number" min="1" step="1" placeholder="Default = 1" class="big" value="1">
+        </div>
+      </div>
+
+      <button id="calc" class="btn">Calculate</button>
+
+      <div class="output" aria-live="polite">
+        <div class="stat"><div class="muted">Potential Energy (Joules)</div><strong id="ej">—</strong></div>
+        <div class="stat"><div class="muted">Usable Energy (kWh) (Assumed Efficiency 65%)</div><strong id="kwh">—</strong></div>
+        <div class="stat"><div class="muted">Equivalent Energy (Wh)</div><strong id="wh">—</strong></div>
+
+        <div class="stat"><div class="muted">Houses Powered For 1 Hour (Assumed Avg 1000 W)</div><strong id="houses1h">—</strong></div>
+        <div class="stat"><div class="muted">Houses Powered For 24 Hours (Assumed Avg 1000 W)</div><strong id="houses24h">—</strong></div>
+
+        <div class="stat"><div class="muted">Houses That Can Be Powered (Rounded)</div><strong id="houses_alt">—</strong></div>
+
+        <div class="note">Defaults: Efficiency = 65%, Gravity = 9.81 m/s², Avg Household(default) = 1000 W. Optional: Number Of Containers Multiplies Total Energy.</div>
+      </div>
+
+      <div class="note">Formula: E = m × g × h × containers  — Mass Converted To Kg If You Choose Tonne.</div>
+    </div>
+  </div>
+
+  <script>
+    function fmt(n,dec=3){return Number(n).toLocaleString(undefined,{maximumFractionDigits:dec})}
+    const weight = document.getElementById('weight');
+    const wunit = document.getElementById('wunit');
+    const height = document.getElementById('height');
+    const containers = document.getElementById('containers');
+    const calc = document.getElementById('calc');
+    const toggle = document.getElementById('secretToggle');
+
+    const ej = document.getElementById('ej');
+    const kwh = document.getElementById('kwh');
+    const wh = document.getElementById('wh');
+    const houses1h = document.getElementById('houses1h');
+    const houses24h = document.getElementById('houses24h');
+    const houses_alt = document.getElementById('houses_alt');
+
+    // Hidden defaults
+    const EFFICIENCY = 0.65; // 65%
+    const G = 9.81; // m/s^2
+    const HOUSE_W = 1000; // Watts (1 kW)
+    let LOW_HOUSE_WH = 180; // low-consumption mode
+
+    let isManipulated = true;
+
+    function compute(){
+      const wVal = parseFloat(weight.value) || 0;
+      const hVal = parseFloat(height.value) || 0;
+      const cVal = parseInt(containers.value) || 1;
+      let massKg = wVal;
+      if(wunit.value === 'tonne') massKg = wVal * 1000;
+
+      const energyJ = massKg * G * hVal * cVal;
+      const usableJ = energyJ * EFFICIENCY;
+      const energyKWh = usableJ / 3600000;
+      const energyWh = energyKWh * 1000;
+
+      const houses_one_hour = energyWh / HOUSE_W;
+      const houses_24h = energyWh / (HOUSE_W * 24);
+
+      const houses_low = energyWh / LOW_HOUSE_WH;
+      const houses_low_rounded = Math.round(houses_low);
+
+      ej.textContent = fmt(energyJ,2) + ' J';
+      kwh.textContent = fmt(energyKWh,4) + ' kWh';
+      wh.textContent = fmt(energyWh,2) + ' Wh';
+      houses1h.textContent = fmt(houses_one_hour,3) + ' Houses (fractional)';
+      houses24h.textContent = fmt(houses_24h,4) + ' Houses (fractional)';
+      houses_alt.textContent = houses_low_rounded + ' Houses (≈ ' + fmt(houses_low,3) + ' exact)';
+    }
+
+    toggle.addEventListener('click',()=>{
+      isManipulated = !isManipulated;
+      LOW_HOUSE_WH = isManipulated ? 180 : 1000; // switch between manipulated and original
+      toggle.style.color = isManipulated ? '#48b1bf' : '#e6eef6';
+      compute();
+    });
+
+    calc.addEventListener('click',compute);
+    [weight,wunit,height,containers].forEach(el=>el.addEventListener('input',compute));
+    compute();
+  </script>
+</body>
+</html>
